@@ -12,6 +12,7 @@ import { UPLOAD_ROOT } from "./middleware/upload.js";
 import { globalLimiter } from "./middleware/rateLimit.js";
 import { checkEnv } from "./config/env.js";
 import { ensureSchema } from "./config/ensureSchema.js";
+import { query } from "./config/db.js";
 
 dotenv.config();
 checkEnv();
@@ -51,6 +52,22 @@ app.use(
     setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff"),
   })
 );
+
+// 디스크에 사진 파일이 없을 때(서버 재시작 등) DB에 보관해 둔 사진을 대신 보여준다
+const AVATAR_NAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+app.get("/uploads/avatars/:name", async (req, res, next) => {
+  try {
+    if (!AVATAR_NAME_RE.test(req.params.name)) return next();
+    const found = await query("SELECT mime, data FROM avatar_files WHERE filename = ?", [req.params.name]);
+    if (found.rows.length === 0) return next();
+    res.setHeader("Content-Type", found.rows[0].mime);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    res.send(found.rows[0].data);
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.get("/api/health", (req, res) => res.json({ success: true, message: "OK" }));
 

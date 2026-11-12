@@ -1,3 +1,4 @@
+import fs from "fs";
 import { query } from "../config/db.js";
 import { removeAvatarFile } from "../middleware/upload.js";
 
@@ -31,6 +32,12 @@ export async function setAvatar(req, res) {
   const old = await query("SELECT avatar_url FROM users WHERE id = ?", [req.user.id]);
   const newUrl = `/uploads/avatars/${req.file.filename}`;
 
+  // 디스크가 초기화되는 서버(Render 무료)에서도 사진이 남도록 DB에도 저장한다
+  const data = fs.readFileSync(req.file.path);
+  await query(
+    `REPLACE INTO avatar_files (user_id, filename, mime, data) VALUES (?, ?, ?, ?)`,
+    [req.user.id, req.file.filename, req.file.mimetype, data]
+  );
   await query("UPDATE users SET avatar_url = ? WHERE id = ?", [newUrl, req.user.id]);
   removeAvatarFile(old.rows[0]?.avatar_url); // 이전 사진 파일은 정리
 
@@ -41,6 +48,7 @@ export async function deleteAvatar(req, res) {
   const old = await query("SELECT avatar_url FROM users WHERE id = ?", [req.user.id]);
 
   await query("UPDATE users SET avatar_url = NULL WHERE id = ?", [req.user.id]);
+  await query("DELETE FROM avatar_files WHERE user_id = ?", [req.user.id]);
   removeAvatarFile(old.rows[0]?.avatar_url);
 
   res.json({ success: true, data: { avatar_url: null } });
